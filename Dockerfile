@@ -1,28 +1,51 @@
 FROM haskell as dev
 
-ENV RESOLVER lts-20.8
-ENV LC_ALL=C.UTF-8
+ENV RESOLVER=nightly-2025-05-01 \
+    LC_ALL=C.UTF-8 \
+    PATH="/usr/app/venv/bin:$PATH"
 
-RUN stack setup --resolver=$RESOLVER --install-ghc \
- && stack install --resolver=$RESOLVER brick-1.6 fsnotify-0.4.1.0 hledger-lib-1.32.1 hledger-1.32.1 hledger-ui-1.32.1 hledger-web-1.32.1 \
- && stack install --resolver=$RESOLVER hledger-stockquotes-0.1.2.1 \
- && stack install --resolver=$RESOLVER hledger-interest-1.6.6 \
- && stack install --resolver=$RESOLVER brick-1.6 hledger-lib-1.32 hledger-iadd-1.3.19
+RUN ghc --version
+RUN stack setup --resolver=$RESOLVER --install-ghc
+RUN apt-get update && apt-get install -y --no-install-recommends git python3-pip python3-venv && apt-get clean && rm -rf /var/lib/apt/lists
+WORKDIR /build
+RUN git clone --depth 1 --branch 1.43.2 https://github.com/simonmichael/hledger && cd hledger && ls && stack install --verbose hledger hledger-ui hledger-web
+RUN cd /build/hledger/bin && ./compile.sh && cp hledger* /root/.local/bin/
 
-# RUN apt-get update && apt-get install -y python3-pip && pip3 install --prefix=/install git+https://gitlab.com/nobodyinperson/hledger-utils git+https://github.com/edkedk99/hledger-lots && rm -rf /var/lib/apt/lists
+# Needs fixes for 1.42
+RUN stack install --resolver=$RESOLVER hledger-stockquotes-0.1.3.2
 
-FROM debian:stable-slim
+# Needs fixes for multi-interval bug
+# RUN stack install --resolver=$RESOLVER hledger-interest-1.6.7
+
+# Needs fixes for 1.41
+RUN stack install --resolver=$RESOLVER hledger-iadd-1.3.21
+
+WORKDIR /usr/app
+
+RUN python3 -m venv /usr/app/venv && pip3 install --no-cache-dir \
+    git+https://gitlab.com/chrisberkhout/pricehist \
+    git+https://gitlab.com/nobodyinperson/hledger-utils \
+    git+https://github.com/edkedk99/hledger-lots
+
+# Simplify this once hledger-interest merges in multi-interval fix
+WORKDIR /build
+RUN git clone https://github.com/adept/hledger-interest && cd hledger-interest && stack install --resolver=$RESOLVER hledger-interest && cd .. && rm -rf hledger-interest
+
+RUN cd /root/.local/bin/ && rm *.o *.hi *.hs && ls /root/.local/bin/
+
+FROM debian:bookworm-slim
 
 MAINTAINER Dmitry Astapov <dastapov@gmail.com>
 
-RUN apt-get update && apt-get install --yes libgmp10 libtinfo6 sudo && rm -rf /var/lib/apt/lists
+RUN apt-get update && apt-get install --yes --no-install-recommends libgmp10 libtinfo6 sudo less && apt-get clean && rm -rf /var/lib/apt/lists
 RUN adduser --system --ingroup root hledger && usermod -aG sudo hledger && mkdir /.cache && chmod 0777 /.cache
 RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
 COPY --from=dev /root/.local/bin/hledger* /usr/bin/
-# COPY --from=dev /install /usr/
+COPY --from=dev /usr/app/venv /usr/app/venv
 
-ENV LC_ALL C.UTF-8
+ENV PATH="/usr/app/venv/bin:$PATH" \
+    LC_ALL=C.UTF-8
 
 COPY data /data
 VOLUME /data
