@@ -44,11 +44,11 @@ RUN apt-get update && apt-get install --yes --no-install-recommends libgmp10 lib
 RUN adduser --system --ingroup root hledger && usermod -aG sudo hledger && mkdir /.cache && chmod 0777 /.cache
 RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
-COPY --from=dev /root/.local/bin/hledger* /usr/bin/
-COPY --from=dev /usr/app/venv /usr/app/venv
+COPY --from=dev /root/.local/bin/hledger /usr/bin/
+COPY --from=dev /root/.local/bin/hledger-ui /usr/bin/
+COPY --from=dev /root/.local/bin/hledger-web /usr/bin/
 
-ENV PATH="/usr/app/venv/bin:$PATH" \
-    LC_ALL=C.UTF-8
+ENV LC_ALL=C.UTF-8
 
 COPY data /data
 VOLUME /data
