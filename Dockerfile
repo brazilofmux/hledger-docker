@@ -33,6 +33,9 @@ RUN git clone https://github.com/adept/hledger-interest && cd hledger-interest &
 
 RUN cd /root/.local/bin/ && rm *.o *.hi *.hs && ls /root/.local/bin/
 
+# Strip debug symbols from all binaries to reduce size
+RUN find /root/.local/bin/ -type f -executable -exec strip --strip-unneeded {} \; 2>/dev/null || true
+
 FROM debian:bookworm-slim
 
 MAINTAINER Dmitry Astapov <dastapov@gmail.com>
