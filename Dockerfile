@@ -1,56 +1,36 @@
 FROM haskell as dev
 
 ENV RESOLVER=nightly-2025-05-01 \
-    LC_ALL=C.UTF-8 \
-    PATH="/usr/app/venv/bin:$PATH"
+    LC_ALL=C.UTF-8
 
 RUN ghc --version
 RUN stack setup --resolver=$RESOLVER --install-ghc
-RUN apt-get update && apt-get install -y --no-install-recommends git python3-pip python3-venv && apt-get clean && rm -rf /var/lib/apt/lists
+RUN apt-get update && apt-get install -y --no-install-recommends git && apt-get clean && rm -rf /var/lib/apt/lists
 WORKDIR /build
 # Refresh the Hackage package index before building. The `haskell` base image
 # ships a snapshot of the index that predates some deps pulled in by hledger's
 # own stack.yaml (e.g. Diff-1.0.2, Decimal-0.5.2); without this refresh, Stack
 # fails with "[S-922] No cryptographic hash found for Hackage package ...".
 RUN stack update
-RUN git clone --depth 1 --branch 1.43.2 https://github.com/simonmichael/hledger && cd hledger && ls && stack install --jobs 4 --verbose hledger hledger-ui hledger-web
-RUN cd /build/hledger/bin && ./compile.sh && cp hledger* /root/.local/bin/
+# Only hledger (for `hledger close`) and hledger-web are used from this image.
+# hledger-ui and the various add-ons (stockquotes, iadd, interest, and the
+# Python pricehist/hledger-utils/hledger-lots tools) were dropped to slim the
+# image and speed up the build.
+RUN git clone --depth 1 --branch 1.43.2 https://github.com/simonmichael/hledger \
+    && cd hledger \
+    && stack install --jobs 4 hledger hledger-web
 
-# Needs fixes for 1.42
-RUN stack install --jobs 4 --resolver=$RESOLVER hledger-stockquotes-0.1.3.2
-
-# Needs fixes for multi-interval bug
-# RUN stack install --resolver=$RESOLVER hledger-interest-1.6.7
-
-# Needs fixes for 1.41
-RUN stack install --jobs 4 --resolver=$RESOLVER hledger-iadd-1.3.21
-
-WORKDIR /usr/app
-
-RUN python3 -m venv /usr/app/venv && pip3 install --no-cache-dir \
-    git+https://gitlab.com/chrisberkhout/pricehist \
-    git+https://gitlab.com/nobodyinperson/hledger-utils \
-    git+https://github.com/edkedk99/hledger-lots
-
-# Simplify this once hledger-interest merges in multi-interval fix
-WORKDIR /build
-RUN git clone https://github.com/adept/hledger-interest && cd hledger-interest && stack install --jobs 4 --resolver=$RESOLVER hledger-interest && cd .. && rm -rf hledger-interest
-
-RUN cd /root/.local/bin/ && rm *.o *.hi *.hs && ls /root/.local/bin/
-
-# Strip debug symbols from all binaries to reduce size
+# Strip debug symbols from the binaries to reduce size
 RUN find /root/.local/bin/ -type f -executable -exec strip --strip-unneeded {} \; 2>/dev/null || true
 
 FROM debian:bookworm-slim
 
 MAINTAINER Dmitry Astapov <dastapov@gmail.com>
 
-RUN apt-get update && apt-get install --yes --no-install-recommends libgmp10 libtinfo6 sudo less && apt-get clean && rm -rf /var/lib/apt/lists
-RUN adduser --system --ingroup root hledger && usermod -aG sudo hledger && mkdir /.cache && chmod 0777 /.cache
-RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+RUN apt-get update && apt-get install --yes --no-install-recommends libgmp10 libtinfo6 less && apt-get clean && rm -rf /var/lib/apt/lists
+RUN adduser --system --ingroup root hledger && mkdir /.cache && chmod 0777 /.cache
 
 COPY --from=dev /root/.local/bin/hledger /usr/bin/
-COPY --from=dev /root/.local/bin/hledger-ui /usr/bin/
 COPY --from=dev /root/.local/bin/hledger-web /usr/bin/
 
 ENV LC_ALL=C.UTF-8
