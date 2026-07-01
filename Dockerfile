@@ -8,6 +8,11 @@ RUN ghc --version
 RUN stack setup --resolver=$RESOLVER --install-ghc
 RUN apt-get update && apt-get install -y --no-install-recommends git python3-pip python3-venv && apt-get clean && rm -rf /var/lib/apt/lists
 WORKDIR /build
+# Refresh the Hackage package index before building. The `haskell` base image
+# ships a snapshot of the index that predates some deps pulled in by hledger's
+# own stack.yaml (e.g. Diff-1.0.2, Decimal-0.5.2); without this refresh, Stack
+# fails with "[S-922] No cryptographic hash found for Hackage package ...".
+RUN stack update
 RUN git clone --depth 1 --branch 1.43.2 https://github.com/simonmichael/hledger && cd hledger && ls && stack install --jobs 4 --verbose hledger hledger-ui hledger-web
 RUN cd /build/hledger/bin && ./compile.sh && cp hledger* /root/.local/bin/
 
